@@ -28,13 +28,23 @@ def init_db(rebuild: bool = False):
         """))
         
         conn.execute(text("""
-            UPDATE tracks 
-            SET fts_vector = to_tsvector('simple', 
-                COALESCE(title, '') || ' ' || 
-                COALESCE(artist, '') || ' ' || 
-                COALESCE(genre, ''))
-            WHERE fts_vector IS NULL;
+            ALTER TABLE tracks
+            ALTER COLUMN fts_vector TYPE tsvector
+            USING to_tsvector('simple',
+                COALESCE(title, '') || ' ' ||
+                COALESCE(artist, '') || ' ' ||
+                COALESCE(genre, '')); 
         """))
+
+        conn.execute(text("""
+        UPDATE tracks 
+        SET fts_vector = to_tsvector('simple', 
+            COALESCE(title, '') || ' ' || 
+            COALESCE(artist, '') || ' ' || 
+            COALESCE(genre, ''))
+        WHERE fts_vector IS NULL;
+    """))
+    
         
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_tracks_vec 
@@ -43,5 +53,4 @@ def init_db(rebuild: bool = False):
             CREATE INDEX IF NOT EXISTS idx_tracks_fts 
             ON tracks USING GIN (fts_vector);
         """))
-        
         conn.commit()
