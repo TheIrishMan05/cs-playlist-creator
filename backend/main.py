@@ -86,7 +86,8 @@ def recommend(
         "bpm": t.bpm,
         "energy": round(t.energy, 2),
         "valence": round(t.valence, 2),
-        "score": round(float(vec_score.eval(t)), 3) if fts_rank is None else None
+        "score": round(float(vec_score.eval(t)), 3) if fts_rank is None else None,
+        "preview_url": t.preview_url
     } for t in results]
 
 

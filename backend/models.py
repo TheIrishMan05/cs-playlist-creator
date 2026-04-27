@@ -12,10 +12,11 @@ class Track(Base):
     artist = Column(String, index=True)
     genre = Column(String, nullable=True)
     bpm = Column(Float)
-    energy = Column(Float)      
-    valence = Column(Float)     
-    embedding = Column(Vector(3)) 
-    fts_vector = Column(Text, nullable=True) 
+    energy = Column(Float)
+    valence = Column(Float)
+    embedding = Column(Vector(3))
+    fts_vector = Column(Text, nullable=True)
+    preview_url = Column(String, nullable=True)
 
 class User(Base):
     __tablename__ = "users"
