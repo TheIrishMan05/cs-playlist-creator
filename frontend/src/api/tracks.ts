@@ -5,7 +5,7 @@ export async function getRecommendations(params: RecommendationParams): Promise<
   const { pulse, mood, user_id, query } = params;
   console.log('getRecommendations called with', params);
   try {
-    const result = await apiGet<Track[]>('/recommend', {
+    const result = await apiGet<Track[]>('/api/recommend', {
       pulse,
       mood,
       user_id,
@@ -22,5 +22,5 @@ export async function getRecommendations(params: RecommendationParams): Promise<
 }
 
 export async function sendFeedback(data: FeedbackRequest): Promise<FeedbackResponse> {
-  return apiPost<FeedbackResponse>('/feedback', data);
+  return apiPost<FeedbackResponse>('/api/feedback', data);
 }

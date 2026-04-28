@@ -10,10 +10,10 @@ from models import Track, User, Feedback
 
 app = FastAPI(title="AI Playlist + Hybrid Search + Online Learning")
 
-# Add CORS middleware to allow requests from frontend dev server
+# Add CORS middleware to allow requests from frontend dev server and Docker frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://frontend:80", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

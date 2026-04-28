@@ -22,30 +22,30 @@ Frontend (React/TypeScript) ↔ Backend (FastAPI) ↔ PostgreSQL + pgvector
 
 ## Quick Start (Demo)
 
-### 1. Start the Backend & Database
+### 1. Start All Services with Docker Compose
 ```bash
 # Ensure Docker is running
 docker-compose up -d
 ```
-The `docker-compose.yml` includes default credentials (postgres/postgres) and creates a PostgreSQL + pgvector database on port 5432, and a FastAPI backend on port 8000.
+
+This command starts three services:
+- **PostgreSQL + pgvector** database on port 5432
+- **FastAPI backend** on port 8000 (API docs at http://localhost:8000/docs)
+- **React frontend** served by nginx on port 3000 (http://localhost:3000)
 
 ### 2. Populate the Database with Tracks
 ```bash
 # Run the loader inside the API container (recommended)
 docker exec playlist_api python loader.py
 ```
+
 If the Deezer API fails (e.g., integer out‑of‑range), the loader will automatically fall back to mock data and insert 30 demo tracks. You can also force mock mode:
 ```bash
 docker exec playlist_api python -c "from loader import load_tracks; load_tracks(use_mock_fallback=True)"
 ```
 
-### 3. Install & Start the Frontend
-```bash
-cd frontend
-npm install --legacy-peer-deps   # resolves potential dependency conflicts
-npm run dev
-```
-The frontend will start on **http://localhost:3000** (configured in `vite.config.ts`). Open this URL in your browser.
+### 3. Open the Frontend
+Open your browser to **http://localhost:3000**. The frontend is already running inside the Docker container (nginx). No need to run `npm run dev` separately.
 
 ### 4. Verify the System
 1. **Open the frontend** at [http://localhost:3000](http://localhost:3000).
@@ -115,8 +115,10 @@ curl "http://localhost:8000/recommend?pulse=120&mood=happy&user_id=1&query=rock"
 │   │   ├── hooks/           # Custom hooks (useAudio, useRecommendationParams)
 │   │   └── types.ts         # TypeScript interfaces
 │   ├── package.json         # Frontend dependencies
-│   └── vite.config.ts       # Build configuration
-└── docker-compose.yml       # PostgreSQL + pgvector service
+│   ├── vite.config.ts       # Build configuration
+│   ├── Dockerfile           # Multi‑stage build for production
+│   └── nginx.conf           # Nginx configuration for serving React and proxying API
+└── docker-compose.yml       # Defines PostgreSQL + pgvector, FastAPI backend, and frontend services
 ```
 
 ## Key Features Implemented
@@ -164,6 +166,8 @@ DEEZER_API_BASE=https://api.deezer.com
 | Backend import errors | Activate virtual environment and `pip install -r requirements.txt` |
 | No audio playback | Some tracks lack preview URLs; fallback to SoundHelix is provided |
 | Simulator not affecting playlist | Ensure pulse changes exceed 10 BPM threshold |
+| `Invalid URL` error in frontend console | The API client expects a valid base URL; in Docker, `API_BASE_URL` is empty. Update `frontend/src/api/client.ts` to handle relative URLs correctly (already fixed in the codebase). |
+| Docker build fails with rollup error on Alpine Linux | Switch from `node:20-alpine` to `node:20` base image in `frontend/Dockerfile` (already fixed). |
 
 ## Development Notes
 

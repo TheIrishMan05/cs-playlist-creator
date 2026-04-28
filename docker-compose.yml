@@ -17,6 +17,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    networks:
+      - app-network
 
   api:
     build: ./backend
@@ -27,8 +29,25 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/playlist_db
     depends_on:
       db:
-        condition: service_healthy 
+        condition: service_healthy
     volumes:
-      - ./backend:/app  
+      - ./backend:/app
+    networks:
+      - app-network
+
+  frontend:
+    build: ./frontend
+    container_name: playlist_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
 volumes:
   pg_data:

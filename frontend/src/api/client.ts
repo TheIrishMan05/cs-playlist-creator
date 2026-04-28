@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// In Docker, frontend is served by nginx which proxies /api to backend
+// For development outside Docker, use VITE_API_BASE_URL or default to localhost:8000
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export class ApiError extends Error {
   constructor(
@@ -25,15 +27,21 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export async function apiGet<T>(endpoint: string, params?: Record<string, string | number | undefined>): Promise<T> {
-  const url = new URL(`${API_BASE_URL}${endpoint}`);
+  let url = endpoint;
   if (params) {
+    const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
-        url.searchParams.append(key, String(value));
+        searchParams.append(key, String(value));
       }
     });
+    const queryString = searchParams.toString();
+    if (queryString) {
+      url += (url.includes('?') ? '&' : '?') + queryString;
+    }
   }
-  const response = await fetch(url.toString(), {
+  const fullUrl = API_BASE_URL ? `${API_BASE_URL}${url}` : url;
+  const response = await fetch(fullUrl, {
     headers: {
       'Accept': 'application/json',
     },
@@ -42,7 +50,8 @@ export async function apiGet<T>(endpoint: string, params?: Record<string, string
 }
 
 export async function apiPost<T>(endpoint: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const fullUrl = API_BASE_URL ? `${API_BASE_URL}${endpoint}` : endpoint;
+  const response = await fetch(fullUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
