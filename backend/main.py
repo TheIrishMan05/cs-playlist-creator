@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Query, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -8,6 +9,15 @@ from database import SessionLocal, engine
 from models import Track, User, Feedback
 
 app = FastAPI(title="AI Playlist + Hybrid Search + Online Learning")
+
+# Add CORS middleware to allow requests from frontend dev server
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def get_db():
     db = SessionLocal()
@@ -79,6 +89,21 @@ def recommend(
 
     results = q.limit(10).all()
     
+    def cosine_similarity(vec1, vec2):
+        # vec1 is list, vec2 may be list or numpy array
+        import numpy as np
+        if hasattr(vec2, 'tolist'):
+            vec2 = vec2.tolist()
+        # ensure both are lists of floats
+        v1 = [float(x) for x in vec1]
+        v2 = [float(x) for x in vec2]
+        dot = sum(a*b for a,b in zip(v1, v2))
+        norm1 = sum(a*a for a in v1) ** 0.5
+        norm2 = sum(b*b for b in v2) ** 0.5
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        return dot / (norm1 * norm2)
+    
     return [{
         "id": t.id,
         "title": t.title,
@@ -86,7 +111,7 @@ def recommend(
         "bpm": t.bpm,
         "energy": round(t.energy, 2),
         "valence": round(t.valence, 2),
-        "score": round(float(vec_score.eval(t)), 3) if fts_rank is None else None,
+        "score": round(cosine_similarity(target_vec, t.embedding), 3) if fts_rank is None else None,
         "preview_url": t.preview_url
     } for t in results]
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Activity, Zap, Pause, Play } from 'lucide-react';
 import { useAppState } from '../context/AppState';
 
@@ -9,9 +9,9 @@ export function Simulator() {
   const [simulationSpeed, setSimulationSpeed] = useState(1); // 1x, 2x, 5x
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    let interval: number | null = null;
     if (isSimulating) {
-      interval = setInterval(() => {
+      interval = window.setInterval(() => {
         // Simulate gradual pulse change: random walk between 60-180
         const change = Math.floor(Math.random() * 7) - 3; // -3 to +3
         const newPulse = Math.max(60, Math.min(180, pulse + change));
@@ -19,7 +19,7 @@ export function Simulator() {
       }, 1000 / simulationSpeed);
     }
     return () => {
-      if (interval) clearInterval(interval);
+      if (interval !== null) clearInterval(interval);
     };
   }, [isSimulating, simulationSpeed, pulse, dispatch]);
 
@@ -37,7 +37,6 @@ export function Simulator() {
 
   const simulateWorkout = () => {
     setIsSimulating(false);
-    let target = 60;
     const steps = [80, 120, 150, 180, 140, 100];
     steps.forEach((step, i) => {
       setTimeout(() => {

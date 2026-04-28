@@ -27,34 +27,35 @@ Frontend (React/TypeScript) ↔ Backend (FastAPI) ↔ PostgreSQL + pgvector
 # Ensure Docker is running
 docker-compose up -d
 ```
+The `docker-compose.yml` includes default credentials (postgres/postgres) and creates a PostgreSQL + pgvector database on port 5432, and a FastAPI backend on port 8000.
 
 ### 2. Populate the Database with Tracks
 ```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate   # Windows
-# or source venv/bin/activate   # Linux/macOS
-pip install -r requirements.txt
-python loader.py
+# Run the loader inside the API container (recommended)
+docker exec playlist_api python loader.py
 ```
-This fetches 100 tracks from Deezer, generates plausible energy/valence values, and stores them with preview URLs.
+If the Deezer API fails (e.g., integer out‑of‑range), the loader will automatically fall back to mock data and insert 30 demo tracks. You can also force mock mode:
+```bash
+docker exec playlist_api python -c "from loader import load_tracks; load_tracks(use_mock_fallback=True)"
+```
 
 ### 3. Install & Start the Frontend
 ```bash
 cd frontend
-npm install
+npm install --legacy-peer-deps   # resolves potential dependency conflicts
 npm run dev
 ```
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+The frontend will start on **http://localhost:3000** (configured in `vite.config.ts`). Open this URL in your browser.
 
 ### 4. Verify the System
-1. **Set a User ID** (optional) in the header for personalization.
-2. **Adjust the heart‑rate slider** (60–180 BPM) – playlist updates when changes exceed 10 BPM.
-3. **Select a mood** (😢 Sad, 😐 Neutral, 😊 Happy, 😰 Stressed).
-4. **Search** for keywords (artist/title) – hybrid search combines vector similarity with text.
-5. **Play previews** – click any track card to hear the 30‑second Deezer preview.
-6. **Rate tracks** with stars – feedback is sent to the backend and influences future recommendations.
-7. **Use the simulator** to auto‑vary heart rate and watch the playlist adapt.
+1. **Open the frontend** at [http://localhost:3000](http://localhost:3000).
+2. **Set a User ID** (optional) in the header for personalization.
+3. **Adjust the heart‑rate slider** (60–180 BPM) – playlist updates when changes exceed 10 BPM.
+4. **Select a mood** (😢 Sad, 😐 Neutral, 😊 Happy, 😰 Stressed).
+5. **Search** for keywords (artist/title) – hybrid search combines vector similarity with text.
+6. **Play previews** – click any track card to hear the 30‑second Deezer preview.
+7. **Rate tracks** with stars – feedback is sent to the backend and influences future recommendations.
+8. **Use the simulator** to auto‑vary heart rate and watch the playlist adapt.
 
 ## Detailed Verification Checklist
 
@@ -155,7 +156,11 @@ DEEZER_API_BASE=https://api.deezer.com
 |-------|----------|
 | `pgvector` extension not found | Ensure PostgreSQL container has pgvector installed (already in Dockerfile) |
 | Deezer API rate limiting | Loader uses a 1‑second delay between requests; if blocked, use `use_mock_fallback=True` |
+| `integer out of range` when loading tracks | Deezer IDs exceed INTEGER range; the model uses `BigInteger`. Re‑initialize database with `init_db(rebuild=True)` after updating models. |
+| `column "fts_vector" is of type tsvector but expression is of type text` | The model now uses `TSVECTOR` type. Re‑initialize database with `init_db(rebuild=True)`. |
+| `Internal Server Error` with `'numpy.float32' object is not iterable` or `'BinaryExpression' object has no attribute 'eval'` | Fix in `main.py`: replace `vec_score.eval(t)` with cosine similarity calculation. See commit history. |
 | Frontend TypeScript errors | Run `npm install` in the `frontend/` directory |
+| `npm install` fails on Windows (esbuild) | Use `npm install --legacy-peer-deps` and ensure Node.js version ≥18. |
 | Backend import errors | Activate virtual environment and `pip install -r requirements.txt` |
 | No audio playback | Some tracks lack preview URLs; fallback to SoundHelix is provided |
 | Simulator not affecting playlist | Ensure pulse changes exceed 10 BPM threshold |

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Play, Pause, Music, User } from 'lucide-react';
 import { Track } from '../types';
 import { useAudio } from '../hooks/useAudio';

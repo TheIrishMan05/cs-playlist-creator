@@ -1,13 +1,14 @@
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, DateTime, BigInteger
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from database import Base
 
 class Track(Base):
     __tablename__ = "tracks"
     id = Column(Integer, primary_key=True, index=True)
-    deezer_id = Column(Integer, unique=True, index=True)
+    deezer_id = Column(BigInteger, unique=True, index=True)
     title = Column(String, index=True)
     artist = Column(String, index=True)
     genre = Column(String, nullable=True)
@@ -15,7 +16,7 @@ class Track(Base):
     energy = Column(Float)
     valence = Column(Float)
     embedding = Column(Vector(3))
-    fts_vector = Column(Text, nullable=True)
+    fts_vector = Column(TSVECTOR, nullable=True)
     preview_url = Column(String, nullable=True)
 
 class User(Base):

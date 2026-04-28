@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Heart, Wifi, WifiOff, User } from 'lucide-react';
 import { useAppState } from '../context/AppState';
 

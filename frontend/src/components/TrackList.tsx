@@ -1,4 +1,4 @@
-import React from 'react';
+import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Music, AlertCircle, RefreshCw } from 'lucide-react';
 import { Track } from '../types';
@@ -9,8 +9,19 @@ import { useAppState } from '../context/AppState';
 
 export function TrackList() {
   const params = useRecommendationParams();
+  console.log('params:', params, 'enabled:', !!params);
   const { state, dispatch } = useAppState();
   const { connectionStatus } = state;
+  
+  // Render counter for debugging
+  const renderCount = useRef(0);
+  renderCount.current += 1;
+  console.log(`TrackList render #${renderCount.current}`, { params, connectionStatus, enabled: !!params });
+  
+  // Log params changes
+  useEffect(() => {
+    console.log('params changed:', params);
+  }, [params]);
 
   const {
     data: tracks = [],
@@ -22,20 +33,39 @@ export function TrackList() {
   } = useQuery<Track[], Error>({
     queryKey: ['recommend', params],
     queryFn: () => getRecommendations(params!),
-    enabled: !!params && connectionStatus === 'connected',
+    enabled: !!params,
     staleTime: 30_000,
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
     retry: (failureCount, error) => {
       if (error.message.includes('404')) return false;
       return failureCount < 3;
     },
-    onError: () => {
-      dispatch({ type: 'SET_CONNECTION_STATUS', payload: 'disconnected' });
-    },
-    onSuccess: () => {
-      dispatch({ type: 'SET_CONNECTION_STATUS', payload: 'connected' });
-    },
   });
+
+  // Debug: log tracks
+  useEffect(() => {
+    console.log('tracks:', tracks, 'length:', tracks.length);
+  }, [tracks]);
+
+  // Cast tracks to Track[] for TypeScript
+  const trackList = tracks as Track[];
+  console.log('trackList in render:', trackList.length, trackList);
+
+  // Update connection status based on query state
+  const prevStatusRef = useRef(connectionStatus);
+  useEffect(() => {
+    let newStatus: typeof connectionStatus | null = null;
+    if (isError) {
+      newStatus = 'disconnected';
+    } else if (!isLoading && trackList.length > 0) {
+      newStatus = 'connected';
+    }
+    // Only dispatch if status changed
+    if (newStatus !== null && newStatus !== prevStatusRef.current) {
+      prevStatusRef.current = newStatus;
+      dispatch({ type: 'SET_CONNECTION_STATUS', payload: newStatus });
+    }
+  }, [isError, isLoading, trackList, dispatch, connectionStatus]);
 
   const handleRetry = () => {
     dispatch({ type: 'SET_CONNECTION_STATUS', payload: 'unknown' });
@@ -51,7 +81,7 @@ export function TrackList() {
             Recommended Playlist
           </h2>
           <p className="text-neutral-400 mt-1">
-            {tracks.length} tracks matching your heart rate {state.pulse} BPM
+            {trackList.length} tracks matching your heart rate {state.pulse} BPM
             {state.mood && ` and ${state.mood} mood`}
             {state.query && ` and search "${state.query}"`}
           </p>
@@ -144,8 +174,8 @@ export function TrackList() {
       {/* Track list */}
       {!isLoading && !isError && (
         <div className="space-y-6">
-          {tracks.length > 0 ? (
-            tracks.map((track) => <TrackCard key={track.id} track={track} />)
+          {trackList.length > 0 ? (
+            trackList.map((track) => <TrackCard key={track.id} track={track} />)
           ) : (
             <div className="p-8 text-center border border-dashed border-neutral-700 rounded-xl">
               <Music className="h-12 w-12 text-neutral-600 mx-auto mb-4" />

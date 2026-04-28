@@ -1,14 +1,6 @@
-import React from 'react';
-import { Smile, Frown, Meh, Flame } from 'lucide-react';
+import { Smile } from 'lucide-react';
 import { useAppState } from '../context/AppState';
 import { Mood, moodOptions } from '../types';
-
-const moodIcons: Record<Mood, React.ReactNode> = {
-  sad: <Frown className="h-6 w-6" />,
-  neutral: <Meh className="h-6 w-6" />,
-  happy: <Smile className="h-6 w-6" />,
-  stressed: <Flame className="h-6 w-6" />,
-};
 
 export function MoodSelector() {
   const { state, dispatch } = useAppState();

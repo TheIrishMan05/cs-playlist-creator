@@ -1,10 +1,9 @@
-import React from 'react';
-import { Play, Pause, SkipBack, SkipForward, Volume2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, AlertCircle } from 'lucide-react';
 import { useAudio } from '../hooks/useAudio';
 import { useAppState } from '../context/AppState';
 
 export function AudioPlayer() {
-  const { play, pause, stop, isPlaying, currentTrackUrl } = useAudio();
+  const { play, pause, stop, isPlaying, currentTrackUrl, error } = useAudio();
   const { state } = useAppState();
   const { currentTrackId } = state;
 
@@ -115,13 +114,20 @@ export function AudioPlayer() {
 
         {/* Status bar */}
         <div className="mt-4 text-center">
-          <div className="text-xs text-neutral-500">
-            {currentTrackUrl
-              ? isPlaying
-                ? 'Playing...'
-                : 'Paused'
-              : 'Audio player idle'}
-          </div>
+          {error ? (
+            <div className="text-xs text-red-400 bg-red-900/30 p-2 rounded-md flex items-center justify-center gap-2">
+              <AlertCircle className="h-3 w-3" />
+              {error}
+            </div>
+          ) : (
+            <div className="text-xs text-neutral-500">
+              {currentTrackUrl
+                ? isPlaying
+                  ? 'Playing...'
+                  : 'Paused'
+                : 'Audio player idle'}
+            </div>
+          )}
         </div>
       </div>
     </div>

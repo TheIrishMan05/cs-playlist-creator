@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Star } from 'lucide-react';
 import { sendFeedback } from '../api/tracks';
 import toast from 'react-hot-toast';
@@ -55,10 +55,11 @@ export function FeedbackRating({ trackId, userId }: FeedbackRatingProps) {
             aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
           >
             <Star
-              className={`h-7 w-7 ${(hoverRating ?? rating) >= star
+              className={`h-7 w-7 ${
+                (hoverRating ?? rating ?? 0) >= star
                   ? 'fill-yellow-500 stroke-yellow-500'
                   : 'fill-neutral-800 stroke-neutral-500'
-                }`}
+              }`}
             />
           </button>
         ))}
