@@ -146,54 +146,127 @@ async def audio_proxy(url: str = Query(..., description="URL of the audio to pro
     """
     Proxy audio requests to bypass CORS restrictions.
     Fetches audio from the given URL and returns it with appropriate CORS headers.
+    Supports multiple audio sources with different header configurations.
     """
     logger.info(f"Audio proxy request for URL: {url[:100]}...")
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Referer': 'https://www.deezer.com/',
-            'Origin': 'https://www.deezer.com',
+    
+    # Define different header configurations for different audio sources
+    header_configs = [
+        # Configuration 1: Deezer-specific headers
+        {
+            'name': 'deezer',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Referer': 'https://www.deezer.com/',
+                'Origin': 'https://www.deezer.com',
+            },
+            'condition': lambda u: 'deezer' in u.lower() or 'cdn-preview' in u.lower()
+        },
+        # Configuration 2: SoundHelix - minimal headers
+        {
+            'name': 'soundhelix',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'audio/*',
+            },
+            'condition': lambda u: 'soundhelix' in u.lower()
+        },
+        # Configuration 3: Mixkit - generic headers
+        {
+            'name': 'mixkit',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'audio/*',
+                'Referer': 'https://mixkit.co/',
+            },
+            'condition': lambda u: 'mixkit' in u.lower()
+        },
+        # Configuration 4: Default generic headers for any URL
+        {
+            'name': 'default',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'audio/*, */*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+            'condition': lambda u: True  # Always matches
         }
-        
-        async with httpx.AsyncClient(timeout=30.0, headers=headers, follow_redirects=True) as client:
-            response = await client.get(url)
-            logger.info(f"Audio proxy response status: {response.status_code}, content-type: {response.headers.get('content-type')}")
-            if response.status_code != 200:
-                # Try without referrer/origin for SoundHelix
-                if 'soundhelix.com' in url:
-                    # SoundHelix doesn't need special headers
-                    pass
-                else:
-                    # For Deezer, maybe the token expired or IP blocked
-                    logger.warning(f"Audio source returned {response.status_code} for URL: {url[:100]}...")
+    ]
+    
+    # Select the appropriate header configuration
+    selected_config = None
+    for config in header_configs:
+        if config['condition'](url):
+            selected_config = config
+            logger.info(f"Selected header config: {config['name']} for URL")
+            break
+    
+    if not selected_config:
+        selected_config = header_configs[-1]  # Use default
+    
+    last_error = None
+    last_status_code = None
+    
+    # Try with the selected configuration first
+    for attempt in range(2):  # Try up to 2 times with different approaches
+        try:
+            headers = selected_config['headers']
+            
+            # On second attempt for Deezer URLs, try without referrer/origin
+            if attempt == 1 and selected_config['name'] == 'deezer':
+                headers = headers.copy()
+                headers.pop('Referer', None)
+                headers.pop('Origin', None)
+                logger.info("Retrying Deezer URL without referrer/origin headers")
+            
+            async with httpx.AsyncClient(timeout=30.0, headers=headers, follow_redirects=True) as client:
+                response = await client.get(url)
+                logger.info(f"Audio proxy response status: {response.status_code}, content-type: {response.headers.get('content-type')}")
                 
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"{response.status_code}: Audio source returned {response.status_code}"
-                )
+                if response.status_code == 200:
+                    # Determine content type
+                    content_type = response.headers.get("content-type", "audio/mpeg")
+                    
+                    # Return the audio with CORS headers
+                    return Response(
+                        content=response.content,
+                        media_type=content_type,
+                        headers={
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET, OPTIONS",
+                            "Access-Control-Allow-Headers": "*",
+                            "Access-Control-Max-Age": "86400",
+                            "Cache-Control": "public, max-age=3600"
+                        }
+                    )
+                else:
+                    last_status_code = response.status_code
+                    logger.warning(f"Audio source returned {response.status_code} for URL: {url[:100]}...")
+                    
+                    # If this is the first attempt and we got 403/404, try next config
+                    if attempt == 0 and response.status_code in [403, 404, 500]:
+                        continue
+                    else:
+                        raise HTTPException(
+                            status_code=response.status_code,
+                            detail=f"{response.status_code}: Audio source returned {response.status_code}"
+                        )
+                        
+        except httpx.RequestError as e:
+            last_error = str(e)
+            logger.error(f"httpx.RequestError (attempt {attempt+1}): {str(e)}")
             
-            # Determine content type
-            content_type = response.headers.get("content-type", "audio/mpeg")
-            
-            # Return the audio with CORS headers
-            return Response(
-                content=response.content,
-                media_type=content_type,
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, OPTIONS",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Max-Age": "86400",
-                    "Cache-Control": "public, max-age=3600"
-                }
-            )
-    except httpx.RequestError as e:
-        logger.error(f"httpx.RequestError: {str(e)}")
-        raise HTTPException(status_code=502, detail=f"Failed to fetch audio: {str(e)}")
-    except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+            # If this is the first attempt, try next config
+            if attempt == 0:
+                continue
+            else:
+                raise HTTPException(status_code=502, detail=f"Failed to fetch audio: {str(e)}")
+    
+    # If we get here, all attempts failed
+    error_detail = f"All attempts failed. Last status: {last_status_code}, error: {last_error}"
+    logger.error(error_detail)
+    raise HTTPException(status_code=502, detail=error_detail)

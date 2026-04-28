@@ -82,7 +82,7 @@ Open your browser to **http://localhost:3000**. The frontend is already running 
 - [ ] Changing mood triggers new recommendations
 - [ ] Search queries combine with vector similarity
 - [ ] User ID is included in API requests when set
-- [ ] Audio previews use Deezer URLs (not SoundHelix fallback)
+- [ ] Audio previews use Deezer URLs (no SoundHelix fallback - tracks without previews show disabled button)
 
 ## API Endpoints
 
@@ -164,7 +164,7 @@ DEEZER_API_BASE=https://api.deezer.com
 | Frontend TypeScript errors | Run `npm install` in the `frontend/` directory |
 | `npm install` fails on Windows (esbuild) | Use `npm install --legacy-peer-deps` and ensure Node.js version ≥18. |
 | Backend import errors | Activate virtual environment and `pip install -r requirements.txt` |
-| No audio playback | Some tracks lack preview URLs; fallback to SoundHelix is provided |
+| No audio playback | Some tracks lack preview URLs; tracks without previews show disabled play button |
 | Simulator not affecting playlist | Ensure pulse changes exceed 10 BPM threshold |
 | `Invalid URL` error in frontend console | The API client expects a valid base URL; in Docker, `API_BASE_URL` is empty. Update `frontend/src/api/client.ts` to handle relative URLs correctly (already fixed in the codebase). |
 | Docker build fails with rollup error on Alpine Linux | Switch from `node:20-alpine` to `node:20` base image in `frontend/Dockerfile` (already fixed). |
@@ -172,7 +172,7 @@ DEEZER_API_BASE=https://api.deezer.com
 ## Development Notes
 
 - The project follows the updated hackathon plan: **camera‑based pulse detection (rPPG) has been removed** in favor of manual input.
-- All audio previews are sourced from Deezer's 30‑second samples; a fallback to SoundHelix is provided for tracks without previews.
+- All audio previews are sourced from Deezer's 30‑second samples; tracks without previews show a disabled play button (no SoundHelix fallback).
 - Energy and valence values are not provided by Deezer; they are generated based on BPM and genre heuristics.
 - The frontend uses TanStack React Query for efficient data fetching, caching, and background updates.
 

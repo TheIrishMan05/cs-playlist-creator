@@ -1,5 +1,5 @@
 import { createContext, useContext, useReducer, ReactNode, Dispatch } from 'react';
-import { Mood } from '../types';
+import { Mood, Track } from '../types';
 
 interface AppState {
   pulse: number;
@@ -7,6 +7,7 @@ interface AppState {
   userId: number | null;
   query: string;
   currentTrackId: number | null;
+  currentTrack: Track | null;
   connectionStatus: 'connected' | 'disconnected' | 'unknown';
 }
 
@@ -16,6 +17,7 @@ type Action =
   | { type: 'SET_USER_ID'; payload: number | null }
   | { type: 'SET_QUERY'; payload: string }
   | { type: 'SET_CURRENT_TRACK'; payload: number | null }
+  | { type: 'SET_CURRENT_TRACK_INFO'; payload: Track | null }
   | { type: 'SET_CONNECTION_STATUS'; payload: AppState['connectionStatus'] };
 
 const initialState: AppState = {
@@ -24,6 +26,7 @@ const initialState: AppState = {
   userId: null,
   query: '',
   currentTrackId: null,
+  currentTrack: null,
   connectionStatus: 'unknown',
 };
 
@@ -44,6 +47,8 @@ function appReducer(state: AppState, action: Action): AppState {
       return { ...state, query: action.payload };
     case 'SET_CURRENT_TRACK':
       return { ...state, currentTrackId: action.payload };
+    case 'SET_CURRENT_TRACK_INFO':
+      return { ...state, currentTrack: action.payload, currentTrackId: action.payload?.id || null };
     case 'SET_CONNECTION_STATUS':
       return { ...state, connectionStatus: action.payload };
     default:

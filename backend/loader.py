@@ -36,31 +36,15 @@ def load_tracks(use_mock_fallback=False):
             tracks_data = resp.json()["data"]
             print(f"Fetched {len(tracks_data)} tracks from Deezer.")
     except Exception as e:
-        print(f"Deezer API failed: {e}. Falling back to mock data.")
-        tracks_data = []
-        use_mock_fallback = True
+        print(f"Deezer API failed: {e}. No fallback to SoundHelix - server not working.")
+        print("Exiting without loading tracks.")
+        db.close()
+        return
     
     if not tracks_data:
-        # Generate mock tracks
-        mock_titles = [
-            "Blinding Lights", "Stay", "As It Was", "Bad Habits", "Heat Waves",
-            "Levitating", "Save Your Tears", "Shivers", "Industry Baby", "Good 4 U",
-            "Kill Bill", "Flowers", "Anti-Hero", "Creepin'", "Unholy"
-        ]
-        mock_artists = [
-            "The Weeknd", "The Kid LAROI", "Harry Styles", "Ed Sheeran", "Glass Animals",
-            "Dua Lipa", "The Weeknd", "Ed Sheeran", "Lil Nas X", "Olivia Rodrigo",
-            "SZA", "Miley Cyrus", "Taylor Swift", "Metro Boomin", "Sam Smith"
-        ]
-        for i in range(30):
-            tracks_data.append({
-                "id": 1000000 + i,
-                "title": mock_titles[i % len(mock_titles)],
-                "artist": {"name": mock_artists[i % len(mock_artists)]},
-                "bpm": random.randint(70, 160),
-                "preview": f"https://www.soundhelix.com/examples/mp3/SoundHelix-Song-{(i % 10) + 1}.mp3",
-                "genre": {"name": random.choice(["Pop", "Rock", "Hip Hop", "Electronic", "R&B"])}
-            })
+        print("No tracks data available. Exiting without loading tracks.")
+        db.close()
+        return
     
     for item in tracks_data:
         if db.query(Track).filter_by(deezer_id=item["id"]).first():

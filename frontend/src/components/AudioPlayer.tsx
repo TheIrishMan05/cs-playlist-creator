@@ -5,13 +5,17 @@ import { useAppState } from '../context/AppState';
 export function AudioPlayer() {
   const { play, pause, stop, isPlaying, currentTrackUrl, error } = useAudio();
   const { state } = useAppState();
-  const { currentTrackId } = state;
+  const { currentTrackId, currentTrack } = state;
 
-  // Mock track info based on currentTrackId
-  const trackTitle = currentTrackId
+  // Use real track info if available, otherwise fallback
+  const trackTitle = currentTrack
+    ? currentTrack.title
+    : currentTrackId
     ? `Track #${currentTrackId}`
     : 'No track selected';
-  const artist = currentTrackId
+  const artist = currentTrack
+    ? currentTrack.artist
+    : currentTrackId
     ? 'Artist'
     : 'Select a track to play';
 

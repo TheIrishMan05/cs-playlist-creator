@@ -14,57 +14,41 @@ export function TrackCard({ track }: TrackCardProps) {
   const { userId } = state;
 
   // Build a proxied audio URL that goes through our backend to avoid CORS issues
-  const getProxiedAudioUrl = (originalUrl: string | null | undefined): string => {
+  const getProxiedAudioUrl = (originalUrl: string | null | undefined): string | null => {
     console.log('getProxiedAudioUrl called with:', originalUrl, 'track.id:', track.id);
-    // If no preview URL, use a fallback (we'll still proxy it)
+    // If no preview URL, return null - no fallback to SoundHelix
     if (!originalUrl) {
-      // Fallback to a default audio URL that we know works
-      const fallbackUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-      const proxyUrl = `/api/audio-proxy?url=${encodeURIComponent(fallbackUrl)}`;
-      console.log('No preview URL, using fallback:', proxyUrl);
-      return proxyUrl;
+      console.log('No preview URL available for track:', track.id);
+      return null;
     }
     
-    // Deezer URLs often return 403, so replace them with SoundHelix URLs
-    if (originalUrl.includes('dzcdn.net')) {
-      // Use a SoundHelix URL based on track ID for variety
-      const soundhelixUrls = [
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3',
-        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3',
-      ];
-      const fallbackUrl = soundhelixUrls[track.id % soundhelixUrls.length];
-      const proxyUrl = `/api/audio-proxy?url=${encodeURIComponent(fallbackUrl)}`;
-      console.log('Deezer URL replaced with SoundHelix:', proxyUrl);
-      return proxyUrl;
-    }
-    
-    // Always use the proxy for any external audio URL
+    // Use the original URL (Deezer or other sources)
     const proxyUrl = `/api/audio-proxy?url=${encodeURIComponent(originalUrl)}`;
-    console.log('Using proxy for external URL:', proxyUrl);
+    console.log('Using proxy for audio URL:', proxyUrl);
     return proxyUrl;
   };
   
   const audioUrl = getProxiedAudioUrl(track.preview_url);
   console.log('TrackCard rendered, track.id:', track.id, 'audioUrl:', audioUrl, 'preview_url:', track.preview_url);
-  const isCurrentPlaying = currentTrackUrl === audioUrl && isPlaying;
+  const isCurrentPlaying = audioUrl ? currentTrackUrl === audioUrl && isPlaying : false;
 
   const handlePlay = () => {
     console.log('TrackCard handlePlay, audioUrl:', audioUrl, 'trackId:', track.id, 'isCurrentPlaying:', isCurrentPlaying, 'preview_url:', track.preview_url);
+    
+    if (!audioUrl) {
+      console.error('No audio URL available for track:', track.id, track.title);
+      // Можно показать уведомление пользователю
+      alert(`No audio preview available for "${track.title}" by ${track.artist}`);
+      return;
+    }
     
     // Log the constructed URL for debugging
     console.log('TrackCard: Constructed proxy URL:', audioUrl);
     
     play(audioUrl);
-    // Update global state with current track ID
+    // Update global state with current track ID and track info
     dispatch({ type: 'SET_CURRENT_TRACK', payload: track.id });
+    dispatch({ type: 'SET_CURRENT_TRACK_INFO', payload: track });
   };
 
   return (
@@ -89,17 +73,33 @@ export function TrackCard({ track }: TrackCardProps) {
             </div>
 
             <div className="flex items-center gap-4">
-              <button
-                onClick={handlePlay}
-                className="h-12 w-12 bg-primary-600 hover:bg-primary-700 rounded-full flex items-center justify-center transition"
-                aria-label={isCurrentPlaying ? 'Pause track' : 'Play track'}
-              >
-                {isCurrentPlaying ? (
-                  <Pause className="h-6 w-6 text-white" />
-                ) : (
-                  <Play className="h-6 w-6 text-white" />
-                )}
-              </button>
+              {audioUrl ? (
+                <button
+                  onClick={handlePlay}
+                  className="h-12 w-12 bg-primary-600 hover:bg-primary-700 rounded-full flex items-center justify-center transition"
+                  aria-label={isCurrentPlaying ? 'Pause track' : 'Play track'}
+                >
+                  {isCurrentPlaying ? (
+                    <Pause className="h-6 w-6 text-white" />
+                  ) : (
+                    <Play className="h-6 w-6 text-white" />
+                  )}
+                </button>
+              ) : (
+                <div className="relative group">
+                  <button
+                    disabled
+                    className="h-12 w-12 bg-neutral-700 rounded-full flex items-center justify-center cursor-not-allowed"
+                    aria-label="No audio preview available"
+                    title="No audio preview available"
+                  >
+                    <Music className="h-6 w-6 text-neutral-400" />
+                  </button>
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-neutral-800 text-neutral-300 text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
+                    No audio preview
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
