@@ -23,7 +23,16 @@ async function handleResponse<T>(response: Response): Promise<T> {
     }
     throw new ApiError(response.status, detail);
   }
-  return response.json();
+  try {
+    const text = await response.text();
+    console.log('handleResponse raw text (first 500 chars):', text.substring(0, 500));
+    const data = JSON.parse(text);
+    console.log('handleResponse parsed data:', data);
+    return data;
+  } catch (error) {
+    console.error('handleResponse JSON parse error:', error);
+    throw new ApiError(response.status, `Invalid JSON response: ${error}`);
+  }
 }
 
 export async function apiGet<T>(endpoint: string, params?: Record<string, string | number | undefined>): Promise<T> {
@@ -41,11 +50,14 @@ export async function apiGet<T>(endpoint: string, params?: Record<string, string
     }
   }
   const fullUrl = API_BASE_URL ? `${API_BASE_URL}${url}` : url;
+  console.log('apiGet fetching:', fullUrl);
   const response = await fetch(fullUrl, {
     headers: {
       'Accept': 'application/json',
     },
   });
+  console.log('apiGet response status:', response.status, response.statusText);
+  console.log('apiGet response headers:', Object.fromEntries(response.headers.entries()));
   return handleResponse<T>(response);
 }
 

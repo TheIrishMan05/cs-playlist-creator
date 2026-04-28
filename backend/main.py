@@ -1,9 +1,11 @@
 from fastapi import FastAPI, Query, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 import numpy as np
+import httpx
 
 from database import SessionLocal, engine
 from models import Track, User, Feedback
@@ -133,3 +135,65 @@ def log_feedback(data: FeedbackRequest, db: Session = Depends(get_db)):
     update_user_embedding(db, data.user_id, track.embedding, data.rating)
     
     return {"status": "ok", "message": "Preference vector updated"}
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+@app.get("/audio-proxy")
+async def audio_proxy(url: str = Query(..., description="URL of the audio to proxy")):
+    """
+    Proxy audio requests to bypass CORS restrictions.
+    Fetches audio from the given URL and returns it with appropriate CORS headers.
+    """
+    logger.info(f"Audio proxy request for URL: {url[:100]}...")
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Referer': 'https://www.deezer.com/',
+            'Origin': 'https://www.deezer.com',
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0, headers=headers, follow_redirects=True) as client:
+            response = await client.get(url)
+            logger.info(f"Audio proxy response status: {response.status_code}, content-type: {response.headers.get('content-type')}")
+            if response.status_code != 200:
+                # Try without referrer/origin for SoundHelix
+                if 'soundhelix.com' in url:
+                    # SoundHelix doesn't need special headers
+                    pass
+                else:
+                    # For Deezer, maybe the token expired or IP blocked
+                    logger.warning(f"Audio source returned {response.status_code} for URL: {url[:100]}...")
+                
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"{response.status_code}: Audio source returned {response.status_code}"
+                )
+            
+            # Determine content type
+            content_type = response.headers.get("content-type", "audio/mpeg")
+            
+            # Return the audio with CORS headers
+            return Response(
+                content=response.content,
+                media_type=content_type,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                    "Access-Control-Max-Age": "86400",
+                    "Cache-Control": "public, max-age=3600"
+                }
+            )
+    except httpx.RequestError as e:
+        logger.error(f"httpx.RequestError: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Failed to fetch audio: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

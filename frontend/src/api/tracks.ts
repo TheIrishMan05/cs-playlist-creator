@@ -17,6 +17,12 @@ export async function getRecommendations(params: RecommendationParams): Promise<
     return result;
   } catch (error) {
     console.error('getRecommendations error', error);
+    // Log more details about the error
+    if (error instanceof Error) {
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
     throw error;
   }
 }

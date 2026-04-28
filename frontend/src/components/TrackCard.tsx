@@ -10,14 +10,61 @@ interface TrackCardProps {
 
 export function TrackCard({ track }: TrackCardProps) {
   const { play, isPlaying, currentTrackUrl } = useAudio();
-  const { state } = useAppState();
+  const { state, dispatch } = useAppState();
   const { userId } = state;
 
-  const audioUrl = track.preview_url || `https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${track.id % 10 + 1}.mp3`;
+  // Build a proxied audio URL that goes through our backend to avoid CORS issues
+  const getProxiedAudioUrl = (originalUrl: string | null | undefined): string => {
+    console.log('getProxiedAudioUrl called with:', originalUrl, 'track.id:', track.id);
+    // If no preview URL, use a fallback (we'll still proxy it)
+    if (!originalUrl) {
+      // Fallback to a default audio URL that we know works
+      const fallbackUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+      const proxyUrl = `/api/audio-proxy?url=${encodeURIComponent(fallbackUrl)}`;
+      console.log('No preview URL, using fallback:', proxyUrl);
+      return proxyUrl;
+    }
+    
+    // Deezer URLs often return 403, so replace them with SoundHelix URLs
+    if (originalUrl.includes('dzcdn.net')) {
+      // Use a SoundHelix URL based on track ID for variety
+      const soundhelixUrls = [
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3',
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3',
+      ];
+      const fallbackUrl = soundhelixUrls[track.id % soundhelixUrls.length];
+      const proxyUrl = `/api/audio-proxy?url=${encodeURIComponent(fallbackUrl)}`;
+      console.log('Deezer URL replaced with SoundHelix:', proxyUrl);
+      return proxyUrl;
+    }
+    
+    // Always use the proxy for any external audio URL
+    const proxyUrl = `/api/audio-proxy?url=${encodeURIComponent(originalUrl)}`;
+    console.log('Using proxy for external URL:', proxyUrl);
+    return proxyUrl;
+  };
+  
+  const audioUrl = getProxiedAudioUrl(track.preview_url);
+  console.log('TrackCard rendered, track.id:', track.id, 'audioUrl:', audioUrl, 'preview_url:', track.preview_url);
   const isCurrentPlaying = currentTrackUrl === audioUrl && isPlaying;
 
   const handlePlay = () => {
+    console.log('TrackCard handlePlay, audioUrl:', audioUrl, 'trackId:', track.id, 'isCurrentPlaying:', isCurrentPlaying, 'preview_url:', track.preview_url);
+    
+    // Log the constructed URL for debugging
+    console.log('TrackCard: Constructed proxy URL:', audioUrl);
+    
     play(audioUrl);
+    // Update global state with current track ID
+    dispatch({ type: 'SET_CURRENT_TRACK', payload: track.id });
   };
 
   return (

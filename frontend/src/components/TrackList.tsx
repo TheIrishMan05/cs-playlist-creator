@@ -32,8 +32,7 @@ export function TrackList() {
     isRefetching,
   } = useQuery<Track[], Error>({
     queryKey: ['recommend', params],
-    queryFn: () => getRecommendations(params!),
-    enabled: !!params,
+    queryFn: () => getRecommendations(params),
     staleTime: 30_000,
     placeholderData: (previousData) => previousData,
     retry: (failureCount, error) => {

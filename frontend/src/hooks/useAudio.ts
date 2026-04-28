@@ -36,16 +36,21 @@ export function useAudio() {
   }, []);
 
   const play = useCallback((url: string) => {
-    if (!audioRef.current) return;
+    console.log('useAudio: play called with url:', url);
+    if (!audioRef.current) {
+      console.error('useAudio: audioRef.current is null');
+      return;
+    }
     setError(null);
 
     // If same track, toggle play/pause
     if (currentTrackUrl === url) {
+      console.log('useAudio: same track, isPlaying:', isPlaying);
       if (isPlaying) {
         audioRef.current.pause();
       } else {
         audioRef.current.play().catch((err) => {
-          console.error('Play error:', err);
+          console.error('useAudio: Play error (same track):', err);
           setError(`Play failed: ${err.message}`);
         });
       }
@@ -53,17 +58,28 @@ export function useAudio() {
     }
 
     // New track: stop previous, load new
+    console.log('useAudio: new track, loading...');
     audioRef.current.pause();
     audioRef.current.src = url;
     audioRef.current.load();
     setCurrentTrackUrl(url);
+    setIsPlaying(true); // Assume it will start playing
     
-    // Add a small delay to ensure audio is loaded
+    // Add a small delay to ensure audio is loaded before playing
+    // This helps with browser autoplay policies
     setTimeout(() => {
-      audioRef.current?.play().catch((err) => {
-        console.error('Play error:', err);
-        setError(`Play failed: ${err.message}. URL: ${url}`);
-      });
+      if (audioRef.current) {
+        console.log('useAudio: attempting to play audio');
+        audioRef.current.play().catch((err) => {
+          console.error('useAudio: Play error (new track):', err);
+          console.error('useAudio: Error details:', err.name, err.message);
+          setError(`Play failed: ${err.message}. URL: ${url}`);
+          setIsPlaying(false); // If play fails, set to false
+        });
+      } else {
+        console.error('useAudio: audioRef.current is null in setTimeout');
+        setIsPlaying(false);
+      }
     }, 100);
   }, [currentTrackUrl, isPlaying]);
 

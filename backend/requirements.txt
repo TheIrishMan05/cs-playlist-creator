@@ -4,3 +4,4 @@ sqlalchemy
 pgvector
 psycopg2-binary
 requests
+httpx
