@@ -170,20 +170,22 @@ export function TrackList() {
         </div>
       )}
 
-      {/* Track list */}
+      {/* Track list - scrollable on large screens when in sidebar */}
       {!isLoading && !isError && (
-        <div className="space-y-6">
-          {trackList.length > 0 ? (
-            trackList.map((track) => <TrackCard key={track.id} track={track} />)
-          ) : (
-            <div className="p-8 text-center border border-dashed border-neutral-700 rounded-xl">
-              <Music className="h-12 w-12 text-neutral-600 mx-auto mb-4" />
-              <h3 className="text-xl font-bold text-white mb-2">No tracks found</h3>
-              <p className="text-neutral-400">
-                Adjust your heart rate, mood, or search query to get recommendations.
-              </p>
-            </div>
-          )}
+        <div className="lg:max-h-[calc(100vh-320px)] lg:overflow-y-auto lg:overflow-x-hidden lg:pr-2 lg:scrollbar-thin lg:scrollbar-thumb-neutral-600 lg:scrollbar-track-neutral-800">
+          <div className="space-y-6">
+            {trackList.length > 0 ? (
+              trackList.map((track) => <TrackCard key={track.id} track={track} />)
+            ) : (
+              <div className="p-8 text-center border border-dashed border-neutral-700 rounded-xl">
+                <Music className="h-12 w-12 text-neutral-600 mx-auto mb-4" />
+                <h3 className="text-xl font-bold text-white mb-2">No tracks found</h3>
+                <p className="text-neutral-400">
+                  Adjust your heart rate, mood, or search query to get recommendations.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

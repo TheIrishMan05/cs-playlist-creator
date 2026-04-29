@@ -247,14 +247,25 @@ async def audio_proxy(url: str = Query(..., description="URL of the audio to pro
                     last_status_code = response.status_code
                     logger.warning(f"Audio source returned {response.status_code} for URL: {url[:100]}...")
                     
+                    # Check if this is an expired Deezer URL
+                    is_deezer_url = 'deezer' in url.lower() or 'cdn-preview' in url.lower()
+                    is_expired = response.status_code == 403 and is_deezer_url
+                    
                     # If this is the first attempt and we got 403/404, try next config
                     if attempt == 0 and response.status_code in [403, 404, 500]:
                         continue
                     else:
-                        raise HTTPException(
-                            status_code=response.status_code,
-                            detail=f"{response.status_code}: Audio source returned {response.status_code}"
-                        )
+                        # Provide more helpful error message for expired Deezer URLs
+                        if is_expired:
+                            raise HTTPException(
+                                status_code=410,  # 410 Gone - more appropriate for expired content
+                                detail="Audio preview has expired. Deezer preview URLs are time-limited and need to be refreshed."
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=response.status_code,
+                                detail=f"{response.status_code}: Audio source returned {response.status_code}"
+                            )
                         
         except httpx.RequestError as e:
             last_error = str(e)
