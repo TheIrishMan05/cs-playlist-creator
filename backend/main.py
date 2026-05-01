@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Query, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 import numpy as np
 import httpx
+import os
 
 from database import SessionLocal, engine
 from models import Track, User, Feedback
@@ -150,9 +151,13 @@ async def audio_proxy(url: str = Query(..., description="URL of the audio to pro
     """
     logger.info(f"Audio proxy request for URL: {url[:100]}...")
     
+    # Check if this is a Deezer URL
+    is_deezer_url = 'deezer' in url.lower() or 'cdn-preview' in url.lower() or 'dzcdn.net' in url.lower()
+    
     # Define different header configurations for different audio sources
+    # Note: Deezer URLs are IP-bound and time-limited, but we'll try to fetch them anyway
     header_configs = [
-        # Configuration 1: Deezer-specific headers
+        # Configuration 1: Deezer-specific headers (kept for completeness but won't be used)
         {
             'name': 'deezer',
             'headers': {
@@ -281,3 +286,58 @@ async def audio_proxy(url: str = Query(..., description="URL of the audio to pro
     error_detail = f"All attempts failed. Last status: {last_status_code}, error: {last_error}"
     logger.error(error_detail)
     raise HTTPException(status_code=502, detail=error_detail)
+
+
+@app.get("/track/{track_id}/preview")
+async def get_fresh_preview(track_id: int, db: Session = Depends(get_db)):
+    """
+    Fetch a fresh preview URL from Deezer API for the given track ID.
+    Returns the URL that can be used with /audio-proxy.
+    """
+    track = db.query(Track).filter_by(id=track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+    
+    deezer_id = track.deezer_id
+    if not deezer_id:
+        raise HTTPException(status_code=404, detail="No Deezer ID for this track")
+    
+    # Fetch from Deezer API
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(f"https://api.deezer.com/track/{deezer_id}", timeout=10.0)
+            resp.raise_for_status()
+            data = resp.json()
+            preview_url = data.get("preview")
+            if not preview_url:
+                raise HTTPException(status_code=404, detail="No preview available")
+            return {"url": preview_url}
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=502, detail=f"Deezer API error: {e.response.status_code}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch preview: {str(e)}")
+
+
+@app.get("/static/audio/{filename}")
+async def serve_audio(filename: str):
+    """
+    Serve local audio files from the static/audio directory.
+    This endpoint provides reliable audio playback without external dependencies.
+    """
+    static_dir = os.path.join(os.path.dirname(__file__), "static", "audio")
+    file_path = os.path.join(static_dir, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"Audio file '{filename}' not found")
+    
+    # Determine content type based on file extension
+    if filename.lower().endswith('.mp3'):
+        media_type = 'audio/mpeg'
+    elif filename.lower().endswith('.wav'):
+        media_type = 'audio/wav'
+    elif filename.lower().endswith('.ogg'):
+        media_type = 'audio/ogg'
+    else:
+        media_type = 'audio/mpeg'
+    
+    return FileResponse(file_path, media_type=media_type)

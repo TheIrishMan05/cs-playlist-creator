@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Music, AlertCircle, RefreshCw } from 'lucide-react';
 import { Track } from '../types';
@@ -49,6 +49,19 @@ export function TrackList() {
   // Cast tracks to Track[] for TypeScript
   const trackList = tracks as Track[];
   console.log('trackList in render:', trackList.length, trackList);
+
+  // Ensure the currently playing track stays in the list
+  const displayTracks = useMemo(() => {
+    const currentTrack = state.currentTrack;
+    if (!currentTrack) return trackList;
+    
+    // Check if current track is already in the list
+    const isAlreadyInList = trackList.some(t => t.id === currentTrack.id);
+    if (isAlreadyInList) return trackList;
+    
+    // Prepend current track to the list
+    return [currentTrack, ...trackList];
+  }, [trackList, state.currentTrack]);
 
   // Update connection status based on query state
   const prevStatusRef = useRef(connectionStatus);
@@ -174,8 +187,8 @@ export function TrackList() {
       {!isLoading && !isError && (
         <div className="lg:max-h-[calc(100vh-320px)] lg:overflow-y-auto lg:overflow-x-hidden lg:pr-2 lg:scrollbar-thin lg:scrollbar-thumb-neutral-600 lg:scrollbar-track-neutral-800">
           <div className="space-y-6">
-            {trackList.length > 0 ? (
-              trackList.map((track) => <TrackCard key={track.id} track={track} />)
+            {displayTracks.length > 0 ? (
+              displayTracks.map((track) => <TrackCard key={track.id} track={track} />)
             ) : (
               <div className="p-8 text-center border border-dashed border-neutral-700 rounded-xl">
                 <Music className="h-12 w-12 text-neutral-600 mx-auto mb-4" />

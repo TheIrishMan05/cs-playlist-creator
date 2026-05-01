@@ -146,6 +146,11 @@ def load_tracks(use_mock_fallback=False):
         energy, valence = generate_energy_valence(bpm, genre)
         norm_bpm = normalize(bpm, 60, 180)
         
+        # Use local audio file instead of Deezer URLs to avoid IP restrictions
+        # We'll use demo1.mp3 for all tracks - in a real app you'd have multiple audio files
+        # The URL will be served by our static endpoint
+        working_preview_url = f"/static/audio/demo1.mp3"
+        
         track = Track(
             deezer_id=item["id"],
             title=item["title"],
@@ -155,7 +160,7 @@ def load_tracks(use_mock_fallback=False):
             energy=energy,
             valence=valence,
             embedding=[norm_bpm, energy, valence],
-            preview_url=preview_url
+            preview_url=working_preview_url  # Use local static audio URL
         )
         db.add(track)
         added += 1
