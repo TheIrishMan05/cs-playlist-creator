@@ -1,13 +1,26 @@
 from fastapi import FastAPI, Query, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response, FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 import numpy as np
+import httpx
+import os
 
 from database import SessionLocal, engine
 from models import Track, User, Feedback
 
 app = FastAPI(title="AI Playlist + Hybrid Search + Online Learning")
+
+# Add CORS middleware to allow requests from frontend dev server and Docker frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://frontend:80", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def get_db():
     db = SessionLocal()
@@ -79,6 +92,21 @@ def recommend(
 
     results = q.limit(10).all()
     
+    def cosine_similarity(vec1, vec2):
+        # vec1 is list, vec2 may be list or numpy array
+        import numpy as np
+        if hasattr(vec2, 'tolist'):
+            vec2 = vec2.tolist()
+        # ensure both are lists of floats
+        v1 = [float(x) for x in vec1]
+        v2 = [float(x) for x in vec2]
+        dot = sum(a*b for a,b in zip(v1, v2))
+        norm1 = sum(a*a for a in v1) ** 0.5
+        norm2 = sum(b*b for b in v2) ** 0.5
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        return dot / (norm1 * norm2)
+    
     return [{
         "id": t.id,
         "title": t.title,
@@ -86,7 +114,8 @@ def recommend(
         "bpm": t.bpm,
         "energy": round(t.energy, 2),
         "valence": round(t.valence, 2),
-        "score": round(float(vec_score.eval(t)), 3) if fts_rank is None else None
+        "score": round(cosine_similarity(target_vec, t.embedding), 3) if fts_rank is None else None,
+        "preview_url": t.preview_url
     } for t in results]
 
 
@@ -107,3 +136,208 @@ def log_feedback(data: FeedbackRequest, db: Session = Depends(get_db)):
     update_user_embedding(db, data.user_id, track.embedding, data.rating)
     
     return {"status": "ok", "message": "Preference vector updated"}
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+@app.get("/audio-proxy")
+async def audio_proxy(url: str = Query(..., description="URL of the audio to proxy")):
+    """
+    Proxy audio requests to bypass CORS restrictions.
+    Fetches audio from the given URL and returns it with appropriate CORS headers.
+    Supports multiple audio sources with different header configurations.
+    """
+    logger.info(f"Audio proxy request for URL: {url[:100]}...")
+    
+    # Check if this is a Deezer URL
+    is_deezer_url = 'deezer' in url.lower() or 'cdn-preview' in url.lower() or 'dzcdn.net' in url.lower()
+    
+    # Define different header configurations for different audio sources
+    # Note: Deezer URLs are IP-bound and time-limited, but we'll try to fetch them anyway
+    header_configs = [
+        # Configuration 1: Deezer-specific headers (kept for completeness but won't be used)
+        {
+            'name': 'deezer',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,application/ogg;q=0.7,video/*;q=0.6,*/*;q=0.5',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Referer': 'https://www.deezer.com/',
+                'Origin': 'https://www.deezer.com',
+            },
+            'condition': lambda u: 'deezer' in u.lower() or 'cdn-preview' in u.lower()
+        },
+        # Configuration 2: SoundHelix - minimal headers
+        {
+            'name': 'soundhelix',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'audio/*',
+            },
+            'condition': lambda u: 'soundhelix' in u.lower()
+        },
+        # Configuration 3: Mixkit - generic headers
+        {
+            'name': 'mixkit',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'audio/*',
+                'Referer': 'https://mixkit.co/',
+            },
+            'condition': lambda u: 'mixkit' in u.lower()
+        },
+        # Configuration 4: Default generic headers for any URL
+        {
+            'name': 'default',
+            'headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'audio/*, */*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+            'condition': lambda u: True  # Always matches
+        }
+    ]
+    
+    # Select the appropriate header configuration
+    selected_config = None
+    for config in header_configs:
+        if config['condition'](url):
+            selected_config = config
+            logger.info(f"Selected header config: {config['name']} for URL")
+            break
+    
+    if not selected_config:
+        selected_config = header_configs[-1]  # Use default
+    
+    last_error = None
+    last_status_code = None
+    
+    # Try with the selected configuration first
+    for attempt in range(2):  # Try up to 2 times with different approaches
+        try:
+            headers = selected_config['headers']
+            
+            # On second attempt for Deezer URLs, try without referrer/origin
+            if attempt == 1 and selected_config['name'] == 'deezer':
+                headers = headers.copy()
+                headers.pop('Referer', None)
+                headers.pop('Origin', None)
+                logger.info("Retrying Deezer URL without referrer/origin headers")
+            
+            async with httpx.AsyncClient(timeout=30.0, headers=headers, follow_redirects=True) as client:
+                response = await client.get(url)
+                logger.info(f"Audio proxy response status: {response.status_code}, content-type: {response.headers.get('content-type')}")
+                
+                if response.status_code == 200:
+                    # Determine content type
+                    content_type = response.headers.get("content-type", "audio/mpeg")
+                    
+                    # Return the audio with CORS headers
+                    return Response(
+                        content=response.content,
+                        media_type=content_type,
+                        headers={
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET, OPTIONS",
+                            "Access-Control-Allow-Headers": "*",
+                            "Access-Control-Max-Age": "86400",
+                            "Cache-Control": "public, max-age=3600"
+                        }
+                    )
+                else:
+                    last_status_code = response.status_code
+                    logger.warning(f"Audio source returned {response.status_code} for URL: {url[:100]}...")
+                    
+                    # Check if this is an expired Deezer URL
+                    is_deezer_url = 'deezer' in url.lower() or 'cdn-preview' in url.lower()
+                    is_expired = response.status_code == 403 and is_deezer_url
+                    
+                    # If this is the first attempt and we got 403/404, try next config
+                    if attempt == 0 and response.status_code in [403, 404, 500]:
+                        continue
+                    else:
+                        # Provide more helpful error message for expired Deezer URLs
+                        if is_expired:
+                            raise HTTPException(
+                                status_code=410,  # 410 Gone - more appropriate for expired content
+                                detail="Audio preview has expired. Deezer preview URLs are time-limited and need to be refreshed."
+                            )
+                        else:
+                            raise HTTPException(
+                                status_code=response.status_code,
+                                detail=f"{response.status_code}: Audio source returned {response.status_code}"
+                            )
+                        
+        except httpx.RequestError as e:
+            last_error = str(e)
+            logger.error(f"httpx.RequestError (attempt {attempt+1}): {str(e)}")
+            
+            # If this is the first attempt, try next config
+            if attempt == 0:
+                continue
+            else:
+                raise HTTPException(status_code=502, detail=f"Failed to fetch audio: {str(e)}")
+    
+    # If we get here, all attempts failed
+    error_detail = f"All attempts failed. Last status: {last_status_code}, error: {last_error}"
+    logger.error(error_detail)
+    raise HTTPException(status_code=502, detail=error_detail)
+
+
+@app.get("/track/{track_id}/preview")
+async def get_fresh_preview(track_id: int, db: Session = Depends(get_db)):
+    """
+    Fetch a fresh preview URL from Deezer API for the given track ID.
+    Returns the URL that can be used with /audio-proxy.
+    """
+    track = db.query(Track).filter_by(id=track_id).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+    
+    deezer_id = track.deezer_id
+    if not deezer_id:
+        raise HTTPException(status_code=404, detail="No Deezer ID for this track")
+    
+    # Fetch from Deezer API
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(f"https://api.deezer.com/track/{deezer_id}", timeout=10.0)
+            resp.raise_for_status()
+            data = resp.json()
+            preview_url = data.get("preview")
+            if not preview_url:
+                raise HTTPException(status_code=404, detail="No preview available")
+            return {"url": preview_url}
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=502, detail=f"Deezer API error: {e.response.status_code}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch preview: {str(e)}")
+
+
+@app.get("/static/audio/{filename}")
+async def serve_audio(filename: str):
+    """
+    Serve local audio files from the static/audio directory.
+    This endpoint provides reliable audio playback without external dependencies.
+    """
+    static_dir = os.path.join(os.path.dirname(__file__), "static", "audio")
+    file_path = os.path.join(static_dir, filename)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"Audio file '{filename}' not found")
+    
+    # Determine content type based on file extension
+    if filename.lower().endswith('.mp3'):
+        media_type = 'audio/mpeg'
+    elif filename.lower().endswith('.wav'):
+        media_type = 'audio/wav'
+    elif filename.lower().endswith('.ogg'):
+        media_type = 'audio/ogg'
+    else:
+        media_type = 'audio/mpeg'
+    
+    return FileResponse(file_path, media_type=media_type)
