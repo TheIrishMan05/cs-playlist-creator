@@ -350,6 +350,9 @@ def prepare_track_data(item):
         about=about,
     )
 
+    # Prefer real Deezer 30s preview when available; fallback to bundled demo.
+    preview_url = detail.get("preview") or "/static/audio/demo1.mp3"
+
     return {
         "deezer_id": item["id"],
         "title": title,
@@ -363,7 +366,7 @@ def prepare_track_data(item):
         "lyrics_source": lyrics_source,
         "about": about,
         "semantic_descriptor": semantic_descriptor,
-        "preview_url": "/static/audio/demo1.mp3",
+        "preview_url": preview_url,
     }
 
 
@@ -430,7 +433,9 @@ def load_tracks(use_mock_fallback=False, target_count=TARGET_TRACK_COUNT):
 
         for index, item in enumerate(candidates, start=1):
             existing = db.query(Track).filter_by(deezer_id=item["id"]).first()
-            if existing and existing.semantic_embedding is not None and existing.about:
+            # Rebuild if core fields exist BUT preview is still the demo placeholder.
+            has_good_preview = bool(existing and existing.preview_url and not existing.preview_url.startswith("/static/audio/demo1"))
+            if existing and existing.semantic_embedding is not None and existing.about and has_good_preview:
                 continue
             if not existing and prepared_new >= needed_new:
                 continue

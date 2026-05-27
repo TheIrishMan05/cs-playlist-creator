@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Star } from 'lucide-react';
 import { sendFeedback } from '../api/tracks';
+import { ApiError } from '../api/client';
 import toast from 'react-hot-toast';
 
 interface FeedbackRatingProps {
@@ -27,11 +28,17 @@ export function FeedbackRating({ trackId, userId }: FeedbackRatingProps) {
       });
     } catch (error) {
       setRating(previousRating);
-      toast.error('Failed to submit feedback. Please try again.', {
+      const message =
+        error instanceof ApiError
+          ? error.detail
+          : 'Failed to submit feedback. Please try again.';
+      toast.error(message, {
         duration: 4000,
         position: 'bottom-right',
       });
-      console.error('Feedback error:', error);
+      if (import.meta.env.DEV) {
+        console.error('Feedback error:', error);
+      }
     } finally {
       setIsSubmitting(false);
     }

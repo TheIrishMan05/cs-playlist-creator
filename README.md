@@ -167,6 +167,7 @@ DEEZER_API_BASE=https://api.deezer.com
 | No audio playback | Some tracks lack preview URLs; tracks without previews show disabled play button |
 | Simulator not affecting playlist | Ensure pulse changes exceed 10 BPM threshold |
 | `Invalid URL` error in frontend console | The API client expects a valid base URL; in Docker, `API_BASE_URL` is empty. Update `frontend/src/api/client.ts` to handle relative URLs correctly (already fixed in the codebase). |
+| API 404 when using `VITE_API_BASE_URL` | Set `VITE_API_BASE_URL` to the backend root only (e.g. `http://localhost:8000`), **without** `/api`. Backend routes are `/recommend`, not `/api/recommend`. Use the Vite/nginx `/api` proxy when possible. |
 | Docker build fails with rollup error on Alpine Linux | Switch from `node:20-alpine` to `node:20` base image in `frontend/Dockerfile` (already fixed). |
 
 ## Development Notes

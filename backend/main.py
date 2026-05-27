@@ -5,9 +5,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+import logging
 import numpy as np
 import httpx
 import os
+
+logger = logging.getLogger(__name__)
 
 from database import SessionLocal, engine
 from models import Track, User, Feedback
@@ -62,6 +65,22 @@ def recommend(
     user_id: int = Query(None, description="ID пользователя для персонализации"),
     query: str = Query(None, description="Текстовый запрос для гибридного поиска"),
     db: Session = Depends(get_db)
+):
+    try:
+        return _recommend_impl(pulse, mood, user_id, query, db)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("recommend failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Recommendation failed: {exc}") from exc
+
+
+def _recommend_impl(
+    pulse: int,
+    mood: str | None,
+    user_id: int | None,
+    query: str | None,
+    db: Session,
 ):
     target_vec = pulse_to_vector(pulse, mood)
     
@@ -141,19 +160,17 @@ class FeedbackRequest(BaseModel):
 def log_feedback(data: FeedbackRequest, db: Session = Depends(get_db)):
     track = db.query(Track).filter_by(id=data.track_id).first()
     if not track:
-        raise HTTPException(404, "Track not found")
-        
-    fb = Feedback(**data.dict())
-    db.add(fb)
-    
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    # Ensure user exists before feedback insert (FK on feedback.user_id)
     update_user_embedding(db, data.user_id, track.embedding, data.rating)
-    
+
+    fb = Feedback(**data.model_dump())
+    db.add(fb)
+    db.commit()
+
     return {"status": "ok", "message": "Preference vector updated"}
 
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 @app.get("/audio-proxy")
 async def audio_proxy(url: str = Query(..., description="URL of the audio to proxy")):
@@ -246,10 +263,10 @@ async def audio_proxy(url: str = Query(..., description="URL of the audio to pro
                 logger.info(f"Audio proxy response status: {response.status_code}, content-type: {response.headers.get('content-type')}")
                 
                 if response.status_code == 200:
-                    # Determine content type
-                    content_type = response.headers.get("content-type", "audio/mpeg")
-                    
-                    # Return the audio with CORS headers
+                    content_type = response.headers.get("content-type", "")
+                    if not content_type or "audio" not in content_type:
+                        content_type = "audio/mpeg"
+
                     return Response(
                         content=response.content,
                         media_type=content_type,
@@ -257,9 +274,9 @@ async def audio_proxy(url: str = Query(..., description="URL of the audio to pro
                             "Access-Control-Allow-Origin": "*",
                             "Access-Control-Allow-Methods": "GET, OPTIONS",
                             "Access-Control-Allow-Headers": "*",
-                            "Access-Control-Max-Age": "86400",
-                            "Cache-Control": "public, max-age=3600"
-                        }
+                            "Accept-Ranges": "bytes",
+                            "Cache-Control": "public, max-age=300",
+                        },
                     )
                 else:
                     last_status_code = response.status_code
@@ -353,4 +370,11 @@ async def serve_audio(filename: str):
     else:
         media_type = 'audio/mpeg'
     
-    return FileResponse(file_path, media_type=media_type)
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Accept-Ranges": "bytes",
+        },
+    )

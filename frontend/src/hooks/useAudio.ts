@@ -1,40 +1,88 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { useAppState } from '../context/AppState';
+
+export interface AudioManagerState {
+  currentAudioId: string | null;
+  currentTrackUrl: string | null;
+  isPlaying: boolean;
+  error: string | null;
+}
+
+type Listener = () => void;
+
+const EMPTY_SNAPSHOT: AudioManagerState = {
+  currentAudioId: null,
+  currentTrackUrl: null,
+  isPlaying: false,
+  error: null,
+};
+
+function isSameOriginAudioUrl(url: string): boolean {
+  if (url.startsWith('/')) return true;
+  try {
+    return new URL(url).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function snapshotsEqual(a: AudioManagerState, b: AudioManagerState): boolean {
+  return (
+    a.currentAudioId === b.currentAudioId &&
+    a.currentTrackUrl === b.currentTrackUrl &&
+    a.isPlaying === b.isPlaying &&
+    a.error === b.error
+  );
+}
 
 // Global audio manager with a single shared Audio element
 class GlobalAudioManager {
   private static instance: GlobalAudioManager;
   private audioElement: HTMLAudioElement;
-  private currentAudioId: string | null = null;
-  private currentTrackUrl: string | null = null;
-  private isPlaying: boolean = false;
+  private loadToken = 0;
+  private state: AudioManagerState = { ...EMPTY_SNAPSHOT };
+  private snapshot: AudioManagerState = { ...EMPTY_SNAPSHOT };
+  private listeners = new Set<Listener>();
 
   private constructor() {
-    this.audioElement = new Audio();
-    this.audioElement.preload = 'none';
-    this.audioElement.crossOrigin = 'anonymous';
-    
-    // Set up event listeners
+    this.audioElement = document.createElement('audio');
+    this.audioElement.preload = 'auto';
+    this.audioElement.setAttribute('playsinline', '');
+    this.audioElement.style.display = 'none';
+    document.body.appendChild(this.audioElement);
+
     this.audioElement.addEventListener('ended', () => {
-      console.log('GlobalAudioManager: track ended');
-      this.isPlaying = false;
-      this.currentAudioId = null;
-      this.currentTrackUrl = null;
+      this.patchState({
+        isPlaying: false,
+        currentAudioId: null,
+        currentTrackUrl: null,
+        error: null,
+      });
     });
-    
+
     this.audioElement.addEventListener('play', () => {
-      console.log('GlobalAudioManager: track started playing');
-      this.isPlaying = true;
+      this.patchState({ isPlaying: true, error: null });
     });
-    
+
     this.audioElement.addEventListener('pause', () => {
-      console.log('GlobalAudioManager: track paused');
-      this.isPlaying = false;
+      this.patchState({ isPlaying: false });
     });
-    
-    this.audioElement.addEventListener('error', (e) => {
-      console.error('GlobalAudioManager: audio error:', e);
-      this.isPlaying = false;
+
+    this.audioElement.addEventListener('error', () => {
+      const mediaError = this.audioElement.error;
+      const message =
+        mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+          ? 'Audio format not supported or preview unavailable'
+          : mediaError?.code === MediaError.MEDIA_ERR_NETWORK
+            ? 'Network error while loading audio'
+            : 'Failed to play audio preview';
+      if (import.meta.env.DEV) {
+        console.error('GlobalAudioManager: audio error', mediaError);
+      }
+      this.patchState({
+        isPlaying: false,
+        error: message,
+      });
     });
   }
 
@@ -45,38 +93,81 @@ class GlobalAudioManager {
     return GlobalAudioManager.instance;
   }
 
+  private patchState(partial: Partial<AudioManagerState>) {
+    const next = { ...this.state, ...partial };
+    if (snapshotsEqual(this.state, next)) return;
+
+    this.state = next;
+    this.snapshot = next;
+    this.notify();
+  }
+
+  private notify() {
+    this.listeners.forEach((listener) => listener());
+  }
+
+  subscribe(listener: Listener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  getSnapshot(): AudioManagerState {
+    return this.snapshot;
+  }
+
+  private applyCorsMode(url: string) {
+    if (isSameOriginAudioUrl(url)) {
+      this.audioElement.removeAttribute('crossorigin');
+    } else {
+      this.audioElement.crossOrigin = 'anonymous';
+    }
+  }
+
+  private startPlayback(url: string, audioId: string) {
+    this.applyCorsMode(url);
+
+    this.audioElement.src = url;
+    this.audioElement.load();
+    this.patchState({
+      currentTrackUrl: url,
+      currentAudioId: audioId,
+      error: null,
+    });
+
+    void this.audioElement.play().catch((err) => this.handlePlayRejection(err));
+  }
+
   play(url: string, audioId: string) {
-    console.log('GlobalAudioManager: play called', { url, audioId, currentAudioId: this.currentAudioId });
-    
-    // If same track, toggle play/pause
-    if (this.currentTrackUrl === url && this.currentAudioId === audioId) {
-      if (this.isPlaying) {
+    if (this.state.currentTrackUrl === url && this.state.currentAudioId === audioId) {
+      if (this.state.isPlaying) {
         this.audioElement.pause();
       } else {
-        this.audioElement.play().catch(err => console.error('Play error:', err));
+        void this.audioElement.play().catch((err) => this.handlePlayRejection(err));
       }
       return;
     }
-    
-    // Stop any currently playing audio
-    if (this.currentAudioId && this.currentAudioId !== audioId) {
-      console.log('GlobalAudioManager: stopping previous audio');
+
+    if (this.state.currentAudioId && this.state.currentAudioId !== audioId) {
       this.audioElement.pause();
       this.audioElement.currentTime = 0;
     }
-    
-    // Load new track
-    this.audioElement.src = url;
-    this.audioElement.load();
-    this.currentTrackUrl = url;
-    this.currentAudioId = audioId;
-    
-    // Start playing
-    this.audioElement.play().catch(err => {
-      console.error('GlobalAudioManager: Play error (new track):', err);
-      this.isPlaying = false;
-      this.currentAudioId = null;
-      this.currentTrackUrl = null;
+
+    this.startPlayback(url, audioId);
+  }
+
+  private handlePlayRejection(err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const name = err instanceof Error ? err.name : '';
+    const isNotAllowed =
+      name === 'NotAllowedError' || message.toLowerCase().includes('notallowed');
+    if (import.meta.env.DEV) {
+      console.error('GlobalAudioManager: Play error', err);
+    }
+    this.patchState({
+      isPlaying: false,
+      error: isNotAllowed
+        ? 'Playback blocked by browser. Click play again or allow sound for this site.'
+        : `Play failed: ${message}`,
     });
   }
 
@@ -85,76 +176,75 @@ class GlobalAudioManager {
   }
 
   stop() {
+    this.loadToken += 1;
     this.audioElement.pause();
     this.audioElement.currentTime = 0;
-    this.audioElement.src = '';
-    this.isPlaying = false;
-    this.currentAudioId = null;
-    this.currentTrackUrl = null;
+    this.audioElement.removeAttribute('src');
+    this.audioElement.load();
+    this.patchState({
+      isPlaying: false,
+      currentAudioId: null,
+      currentTrackUrl: null,
+      error: null,
+    });
   }
 
   getIsPlaying(audioId: string): boolean {
-    return this.isPlaying && this.currentAudioId === audioId;
-  }
-
-  getCurrentAudioId(): string | null {
-    return this.currentAudioId;
+    return this.state.isPlaying && this.state.currentAudioId === audioId;
   }
 }
 
-export function useAudio(id?: string) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTrackUrl, setCurrentTrackUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+function subscribeToManager(listener: Listener) {
+  return GlobalAudioManager.getInstance().subscribe(listener);
+}
+
+function getManagerSnapshot(): AudioManagerState {
+  return GlobalAudioManager.getInstance().getSnapshot();
+}
+
+export function useAudio(trackId?: string) {
+  const audioId = trackId ?? null;
+  const managerState = useSyncExternalStore(
+    subscribeToManager,
+    getManagerSnapshot,
+    getManagerSnapshot,
+  );
   const { dispatch } = useAppState();
-  const defaultId = useRef(Math.random().toString(36).substring(2)).current;
-  const audioId = id || defaultId;
   const manager = GlobalAudioManager.getInstance();
 
-  // Sync playing state with global manager
-  useEffect(() => {
-    const checkPlaying = () => {
-      const currentlyPlaying = manager.getIsPlaying(audioId);
-      if (currentlyPlaying !== isPlaying) {
-        setIsPlaying(currentlyPlaying);
-      }
-    };
-    
-    // Check periodically (crude but works)
-    const interval = setInterval(checkPlaying, 500);
-    return () => clearInterval(interval);
-  }, [manager, isPlaying, audioId]);
+  const isActiveTrack = audioId !== null && managerState.currentAudioId === audioId;
+  const isPlaying = audioId !== null ? manager.getIsPlaying(audioId) : managerState.isPlaying;
+  const currentTrackUrl =
+    audioId !== null
+      ? isActiveTrack
+        ? managerState.currentTrackUrl
+        : null
+      : managerState.currentTrackUrl;
+  const error = isActiveTrack || audioId === null ? managerState.error : null;
 
-  const play = useCallback((url: string) => {
-    console.log('useAudio: play called with url:', url, 'audioId:', audioId);
-    setError(null);
-    
-    // Update local state
-    setCurrentTrackUrl(url);
-    
-    // Delegate playback to global manager
-    try {
-      manager.play(url, audioId);
-    } catch (err) {
-      console.error('useAudio: Play error:', err);
-      setError(`Play failed: ${err instanceof Error ? err.message : String(err)}`);
-      setIsPlaying(false);
-      dispatch({ type: 'SET_CURRENT_TRACK', payload: null });
-      dispatch({ type: 'SET_CURRENT_TRACK_INFO', payload: null });
-    }
-  }, [manager, audioId, dispatch]);
+  const play = useCallback(
+    (url: string, id?: string) => {
+      const playId = id ?? audioId ?? 'global';
+      try {
+        manager.play(url, playId);
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.error('useAudio: Play error', err);
+        }
+        dispatch({ type: 'SET_CURRENT_TRACK', payload: null });
+        dispatch({ type: 'SET_CURRENT_TRACK_INFO', payload: null });
+        throw err;
+      }
+    },
+    [manager, audioId, dispatch],
+  );
 
   const pause = useCallback(() => {
-    console.log('useAudio: pause called');
     manager.pause();
   }, [manager]);
 
   const stop = useCallback(() => {
-    console.log('useAudio: stop called');
     manager.stop();
-    setIsPlaying(false);
-    setCurrentTrackUrl(null);
-    // Clear current track from global state
     dispatch({ type: 'SET_CURRENT_TRACK', payload: null });
     dispatch({ type: 'SET_CURRENT_TRACK_INFO', payload: null });
   }, [manager, dispatch]);
@@ -166,5 +256,6 @@ export function useAudio(id?: string) {
     isPlaying,
     currentTrackUrl,
     error,
+    currentAudioId: managerState.currentAudioId,
   };
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, ReactNode, Dispatch } from 'react';
+import { createContext, useContext, useReducer, ReactNode, Dispatch, useMemo } from 'react';
 import { Mood, Track } from '../types';
 
 interface AppState {
@@ -38,18 +38,29 @@ const AppStateContext = createContext<{
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'SET_PULSE':
+      if (state.pulse === action.payload) return state;
       return { ...state, pulse: action.payload };
     case 'SET_MOOD':
+      if (state.mood === action.payload) return state;
       return { ...state, mood: action.payload };
     case 'SET_USER_ID':
+      if (state.userId === action.payload) return state;
       return { ...state, userId: action.payload };
     case 'SET_QUERY':
+      if (state.query === action.payload) return state;
       return { ...state, query: action.payload };
     case 'SET_CURRENT_TRACK':
+      if (state.currentTrackId === action.payload) return state;
       return { ...state, currentTrackId: action.payload };
-    case 'SET_CURRENT_TRACK_INFO':
-      return { ...state, currentTrack: action.payload, currentTrackId: action.payload?.id || null };
+    case 'SET_CURRENT_TRACK_INFO': {
+      const nextId = action.payload?.id ?? null;
+      if (state.currentTrack === action.payload && state.currentTrackId === nextId) {
+        return state;
+      }
+      return { ...state, currentTrack: action.payload, currentTrackId: nextId };
+    }
     case 'SET_CONNECTION_STATUS':
+      if (state.connectionStatus === action.payload) return state;
       return { ...state, connectionStatus: action.payload };
     default:
       return state;
@@ -58,11 +69,9 @@ function appReducer(state: AppState, action: Action): AppState {
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
-  return (
-    <AppStateContext.Provider value={{ state, dispatch }}>
-      {children}
-    </AppStateContext.Provider>
-  );
+  const value = useMemo(() => ({ state, dispatch }), [state]);
+
+  return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
 
 export function useAppState() {
