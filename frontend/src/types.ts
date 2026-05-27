@@ -5,7 +5,11 @@ export interface Track {
   bpm: number;
   energy: number;
   valence: number;
-  score: number | null; // null when query is used
+  score: number | null;
+  semantic_score?: number | null;
+  about?: string | null;
+  lyrics_source?: string | null;
+  has_lyrics?: boolean;
   preview_url?: string | null;
 }
 

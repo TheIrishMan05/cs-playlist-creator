@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Query, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, FileResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -10,6 +11,7 @@ import os
 
 from database import SessionLocal, engine
 from models import Track, User, Feedback
+from semantic import build_query_descriptor, cosine_similarity, embed_text
 
 app = FastAPI(title="AI Playlist + Hybrid Search + Online Learning")
 
@@ -69,54 +71,65 @@ def recommend(
             target_vec = (0.7 * np.array(target_vec) + 0.3 * np.array(user.embedding)).tolist()
 
 
-    vec_dist = Track.embedding.cosine_distance(target_vec)
-    vec_score = 1 - vec_dist
-    
-    fts_rank = None
     if query:
-        from sqlalchemy import func
+        query_vec = embed_text(build_query_descriptor(query))
+        semantic_dist = Track.semantic_embedding.cosine_distance(query_vec)
+        semantic_score = 1 - semantic_dist
+        pulse_score = 1 - Track.embedding.cosine_distance(target_vec)
+
+        results = (
+            db.query(Track)
+            .filter(Track.semantic_embedding.isnot(None))
+            .order_by(((0.85 * semantic_score) + (0.15 * pulse_score)).desc())
+            .limit(10)
+            .all()
+        )
+
+        if results:
+            return [_serialize_track(t, target_vec, query_vec) for t in results]
+
         search_q = func.plainto_tsquery('simple', query)
         fts_rank = func.ts_rank_cd(Track.fts_vector, search_q)
-        
+        results = (
+            db.query(Track)
+            .filter(Track.fts_vector.op('@@')(search_q))
+            .order_by(fts_rank.desc())
+            .limit(10)
+            .all()
+        )
 
+        if results:
+            return [_serialize_track(t, target_vec, None) for t in results]
+
+    vec_dist = Track.embedding.cosine_distance(target_vec)
     min_bpm = max(60, pulse - 20)
     max_bpm = min(180, pulse + 20)
     q = db.query(Track).filter(Track.bpm.between(min_bpm, max_bpm))
 
-
-    if fts_rank is not None:
-        combined = (0.6 * vec_score) + (0.4 * fts_rank)
-        q = q.order_by(combined.desc())
-    else:
-        q = q.order_by(vec_dist)
+    q = q.order_by(vec_dist)
 
     results = q.limit(10).all()
-    
-    def cosine_similarity(vec1, vec2):
-        # vec1 is list, vec2 may be list or numpy array
-        import numpy as np
-        if hasattr(vec2, 'tolist'):
-            vec2 = vec2.tolist()
-        # ensure both are lists of floats
-        v1 = [float(x) for x in vec1]
-        v2 = [float(x) for x in vec2]
-        dot = sum(a*b for a,b in zip(v1, v2))
-        norm1 = sum(a*a for a in v1) ** 0.5
-        norm2 = sum(b*b for b in v2) ** 0.5
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-        return dot / (norm1 * norm2)
-    
-    return [{
+    return [_serialize_track(t, target_vec, None) for t in results]
+
+
+def _serialize_track(t: Track, target_vec: list[float], query_vec: Optional[list[float]]):
+    semantic_score = cosine_similarity(query_vec, t.semantic_embedding) if query_vec else None
+    pulse_score = cosine_similarity(target_vec, t.embedding)
+
+    return {
         "id": t.id,
         "title": t.title,
         "artist": t.artist,
         "bpm": t.bpm,
         "energy": round(t.energy, 2),
         "valence": round(t.valence, 2),
-        "score": round(cosine_similarity(target_vec, t.embedding), 3) if fts_rank is None else None,
-        "preview_url": t.preview_url
-    } for t in results]
+        "score": round(semantic_score if semantic_score is not None else pulse_score, 3),
+        "semantic_score": round(semantic_score, 3) if semantic_score is not None else None,
+        "about": t.about,
+        "lyrics_source": t.lyrics_source,
+        "has_lyrics": bool(t.lyrics),
+        "preview_url": t.preview_url,
+    }
 
 
 class FeedbackRequest(BaseModel):

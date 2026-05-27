@@ -161,6 +161,11 @@ export function TrackCard({ track }: TrackCardProps) {
                 <User className="h-4 w-4" />
                 {track.artist}
               </p>
+              {track.about && (
+                <p className="text-sm text-neutral-300 mt-3 leading-relaxed max-h-20 overflow-hidden">
+                  {track.about}
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-4">
@@ -221,12 +226,16 @@ export function TrackCard({ track }: TrackCardProps) {
           <div className="text-lg font-bold text-white">{track.valence.toFixed(2)}</div>
         </div>
         <div className="bg-neutral-900/50 p-2 rounded-lg">
-          <div className="text-xs text-neutral-400 mb-1">Score</div>
+          <div className="text-xs text-neutral-400 mb-1">
+            {track.semantic_score !== null && track.semantic_score !== undefined ? 'Semantic' : 'Score'}
+          </div>
           <div className="text-lg font-bold text-white">
             {track.score !== null ? track.score.toFixed(3) : '—'}
           </div>
           <div className="text-xs text-neutral-500 mt-1">
-            {track.score !== null ? 'cosine similarity' : 'hidden (search active)'}
+            {track.semantic_score !== null && track.semantic_score !== undefined
+              ? (track.has_lyrics ? `lyrics: ${track.lyrics_source || 'found'}` : 'metadata fallback')
+              : 'pulse match'}
           </div>
         </div>
       </div>

@@ -5,3 +5,4 @@ pgvector
 psycopg2-binary
 requests
 httpx
+sentence-transformers>=3.0.0

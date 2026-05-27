@@ -90,12 +90,12 @@ export function TrackList() {
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-3">
             <Music className="h-7 w-7" />
-            Recommended Playlist
+            Generated Playlist
           </h2>
           <p className="text-neutral-400 mt-1">
             {trackList.length} tracks matching your heart rate {state.pulse} BPM
             {state.mood && ` and ${state.mood} mood`}
-            {state.query && ` and search "${state.query}"`}
+            {state.query && ` and request "${state.query}"`}
           </p>
         </div>
         <div className="flex items-center gap-3">

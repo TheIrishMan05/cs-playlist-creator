@@ -1,7 +1,7 @@
-from sqlalchemy import create_engine, text, Column, String
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
-from pgvector.sqlalchemy import Vector
 import os
+from semantic import SEMANTIC_VECTOR_DIM
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/playlist_db")
 
@@ -22,6 +22,15 @@ def init_db(rebuild: bool = False):
         Base.metadata.create_all(bind=engine)
     
     with engine.connect() as conn:
+        conn.execute(text(f"""
+            ALTER TABLE tracks
+            ADD COLUMN IF NOT EXISTS lyrics text,
+            ADD COLUMN IF NOT EXISTS lyrics_source varchar,
+            ADD COLUMN IF NOT EXISTS about text,
+            ADD COLUMN IF NOT EXISTS semantic_descriptor text,
+            ADD COLUMN IF NOT EXISTS semantic_embedding vector({SEMANTIC_VECTOR_DIM});
+        """))
+
         conn.execute(text("""
             ALTER TABLE tracks 
             ADD COLUMN IF NOT EXISTS fts_vector tsvector;
@@ -33,7 +42,9 @@ def init_db(rebuild: bool = False):
             USING to_tsvector('simple',
                 COALESCE(title, '') || ' ' ||
                 COALESCE(artist, '') || ' ' ||
-                COALESCE(genre, '')); 
+                COALESCE(genre, '') || ' ' ||
+                COALESCE(about, '') || ' ' ||
+                COALESCE(lyrics, ''));
         """))
 
         conn.execute(text("""
@@ -41,14 +52,19 @@ def init_db(rebuild: bool = False):
         SET fts_vector = to_tsvector('simple', 
             COALESCE(title, '') || ' ' || 
             COALESCE(artist, '') || ' ' || 
-            COALESCE(genre, ''))
-        WHERE fts_vector IS NULL;
+            COALESCE(genre, '') || ' ' ||
+            COALESCE(about, '') || ' ' ||
+            COALESCE(lyrics, ''));
     """))
     
         
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_tracks_vec 
             ON tracks USING hnsw (embedding vector_cosine_ops);
+
+            CREATE INDEX IF NOT EXISTS idx_tracks_semantic_vec
+            ON tracks USING hnsw (semantic_embedding vector_cosine_ops)
+            WHERE semantic_embedding IS NOT NULL;
             
             CREATE INDEX IF NOT EXISTS idx_tracks_fts 
             ON tracks USING GIN (fts_vector);

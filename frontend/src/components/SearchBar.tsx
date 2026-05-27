@@ -22,10 +22,10 @@ export function SearchBar() {
     <div className="bg-neutral-800 rounded-xl p-6 shadow-lg">
       <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
         <Search className="h-5 w-5" />
-        Hybrid Search
+        Semantic Playlist Search
       </h2>
       <p className="text-neutral-400 mb-6">
-        Combine semantic vector search with text matching. When a query is present, the score column will be hidden.
+        Describe the playlist you want. Search will match the meaning of lyrics, track context, and mood descriptors.
       </p>
 
       <div className="relative">
@@ -36,7 +36,7 @@ export function SearchBar() {
           type="text"
           value={localQuery}
           onChange={(e) => setLocalQuery(e.target.value)}
-          placeholder="Search for tracks, artists, genres..."
+          placeholder="Sad indie for a late night walk, energetic tracks about confidence..."
           className="w-full pl-12 pr-12 py-4 bg-neutral-900 border border-neutral-700 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           aria-label="Search tracks"
         />
@@ -53,7 +53,13 @@ export function SearchBar() {
 
       <div className="mt-6 flex flex-wrap gap-3">
         <span className="text-sm text-neutral-400">Quick suggestions:</span>
-        {['rock', 'chill', 'electronic', 'classical', 'jazz', 'pop'].map((tag) => (
+        {[
+          'music about lonely city nights',
+          'warm love songs for a slow evening',
+          'confident tracks for a workout',
+          'calm focus music with soft lyrics',
+          'nostalgic road trip songs',
+        ].map((tag) => (
           <button
             key={tag}
             onClick={() => setLocalQuery(tag)}
@@ -73,7 +79,7 @@ export function SearchBar() {
             </span>
           </div>
           <div className="text-sm text-neutral-400">
-            {query ? 'Score column hidden' : 'Score column visible'}
+            {query ? 'Semantic ranking active' : 'Pulse ranking active'}
           </div>
         </div>
       </div>
